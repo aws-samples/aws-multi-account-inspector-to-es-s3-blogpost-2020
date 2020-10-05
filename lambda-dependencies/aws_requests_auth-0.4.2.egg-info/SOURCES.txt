@@ -1,0 +1,15 @@
+CHANGELOG.md
+LICENSE
+MANIFEST.in
+README.md
+aws_requests_auth/__init__.py
+aws_requests_auth/aws_auth.py
+aws_requests_auth/boto_utils.py
+aws_requests_auth.egg-info/PKG-INFO
+aws_requests_auth.egg-info/SOURCES.txt
+aws_requests_auth.egg-info/dependency_links.txt
+aws_requests_auth.egg-info/requires.txt
+aws_requests_auth.egg-info/top_level.txt
+aws_requests_auth/tests/__init__.py
+aws_requests_auth/tests/test_aws_auth.py
+aws_requests_auth/tests/test_boto_utils.py

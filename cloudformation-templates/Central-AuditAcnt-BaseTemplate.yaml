@@ -1,0 +1,249 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'Step 1 - This template should be deployed in all region of the central audit account to create all the necessary resources for collecting Inspector findings from all application accounts.'
+Parameters:
+  CentralAuditAccountID:
+    Type: String
+    Description: Account ID of the Central Audit Account
+  PrimaryRegion:
+    Type: String
+    Description: Name of region in Central Audit Account where the central SQS Queue and lambda function to be deplyed (should be same as where ES domain exists)
+    Default: us-east-1
+  LambdaSourceCodeS3Bucket:
+    Type: String
+    Description: Name of the S3 Bucket in Central Audit Account where you uploaded the lambda package for sending findings from Inspector to Elasticsearch domain and S3
+    AllowedPattern: ^[0-9A-Za-z\.\-_]*(?<!\.)$
+  LambdaCodeS3Key:
+    Type: String
+    Description: Name of the S3 Key you uploaded the Inspector2S3ES lambda package as
+    Default: Inspector-to-S3ES-crossAcnt.zip
+  LambdaExecutionRoleName:
+    Type: String
+    Description: Name of the execution role (not ARN) that is assumed by Lambda function
+    Default: Inspector-to-S3-ES-LambdaExec.iamrole
+  CrossAccountRoleName:
+    Type: String
+    Description: Name of the role (not ARN) to be created (in the next template) in all application accounts that is assumed by Lambda role of audit account for fetching Inspector findings
+    Default: CrossAccountInspector.iamrole
+  LoggingS3Bucket:
+    Type: String
+    Description: Name of the S3 Bucket in Central Audit Account where all the Inspector findings need to be stored
+    AllowedPattern: ^[0-9A-Za-z\.\-_]*(?<!\.)$
+  ElasticsearchDomainName:
+    Type: String
+    Description: Name of the Elasticsearch (ES) domain in Central Audit Account where all the Inspector findings are to be forwarded
+  ElasticsearchEndpoint:
+    Type: String
+    Description: 'URL to reach the ES domain in Central Audit Account [ REMOVE the "https://" portion from the endpoint URL]'
+  ElasticsearchIndex:
+    Type: String
+    Description: Name of the ES index to which the Inspector findings are posted
+    Default: 'inspector-findings-index'
+  RegionalSNSTopicName:
+    Type: String
+    Description: Name of the regional SNS Topic that will notify SQS on Inspector findings reported in its region of all application accounts
+    Default: Inspector-to-SQS-topic
+  CentralDeadLetterQueueName:
+    Type: String
+    Description: Name of the Dead-Letter queue used for handling message failure to the main queue
+    Default: Inspector-to-S3-ES-DeadLetter-queue
+  CentralMainSQSQueueName:
+    Type: String
+    Description: Name of the Main SQS queue where all the Inspector findings collected across the fleet will be sent
+    Default: Inspector-to-S3-ES-Main-queue
+Conditions: 
+  CreatePrimaryRegionResources: !Equals [ !Ref PrimaryRegion, !Ref "AWS::Region" ]
+Resources:
+  RegionalSNSTopic:
+    Type: 'AWS::SNS::Topic'
+    Properties:
+      TopicName: !Ref RegionalSNSTopicName
+  RegionalSNSTopicPolicy:
+    Type: 'AWS::SNS::TopicPolicy'
+    Properties:
+      PolicyDocument:
+        Version: 2008-10-17
+        Id: policy_ID
+        Statement:
+          - Sid: TopicAccessPolicyforInspector
+            Effect: Allow
+            Principal:
+              AWS:
+                - 'arn:aws:iam::316112463485:root' # Inspector account for N. Virginia
+                - 'arn:aws:iam::758058086616:root' # Inspector account for Oregon
+                - 'arn:aws:iam::646659390643:root' # Inspector account for Ohio
+                - 'arn:aws:iam::166987590008:root' # Inspector account for N. California
+                - 'arn:aws:iam::162588757376:root' # Inspector account for Mumbai
+                - 'arn:aws:iam::526946625049:root' # Inspector account for Seoul
+                - 'arn:aws:iam::454640832652:root' # Inspector account for Sydney
+                - 'arn:aws:iam::406045910587:root' # Inspector account for Tokyo
+                - 'arn:aws:iam::537503971621:root' # Inspector account for Frankfurt
+                - 'arn:aws:iam::357557129151:root' # Inspector account for Ireland
+                - 'arn:aws:iam::146838936955:root' # Inspector account for London
+                - 'arn:aws:iam::453420244670:root' # Inspector account for Stockholm 
+            Action:
+              - 'SNS:Publish'
+              - 'SNS:Subscribe'
+            Resource: !Ref RegionalSNSTopic
+          - Sid: TopicAccessPolicyforCentralAcntSQS
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${CentralAuditAccountID}:root' # Central account where the SQS Queue is created
+            Action:
+              - 'SNS:Subscribe'
+            Resource: !Ref RegionalSNSTopic
+      Topics:
+        - !Ref RegionalSNSTopic
+  CentralDeadLetterQueue:
+    Condition: CreatePrimaryRegionResources
+    Type: 'AWS::SQS::Queue'
+    Properties:
+      QueueName: !Ref CentralDeadLetterQueueName
+  CentralSQSQueue:
+    Condition: CreatePrimaryRegionResources
+    Type: 'AWS::SQS::Queue'
+    Properties:
+      QueueName: !Ref CentralMainSQSQueueName
+      MessageRetentionPeriod: 86400
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt CentralDeadLetterQueue.Arn
+        maxReceiveCount: 100
+    DependsOn:
+      - CentralDeadLetterQueue
+  CentralSQSQueuePolicy:
+    Condition: CreatePrimaryRegionResources
+    Type: 'AWS::SQS::QueuePolicy'
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Id: 'SQSDefaultPolicy'
+        Statement:
+          - Sid: 'Permission for Queue to receive messages from a specific SNS Topic'
+            Effect: Allow
+            Principal: '*'
+            Action:
+              - 'SQS:ReceiveMessage'
+            Resource: !GetAtt CentralSQSQueue.Arn
+            Condition:
+              ArnEquals:
+                'aws:SourceArn': !Sub 'arn:aws:sns:us-*:${CentralAuditAccountID}:${RegionalSNSTopicName}'
+          - Sid: 'Permission for an SNS Topic to send messages to the Queue'
+            Effect: Allow
+            Principal: '*'
+            Action:
+              - 'SQS:SendMessage'
+            Resource: !GetAtt CentralSQSQueue.Arn
+            Condition:
+              ArnEquals:
+                'aws:SourceArn': !Sub 'arn:aws:sns:us-*:${CentralAuditAccountID}:${RegionalSNSTopicName}'
+      Queues:
+        - !Ref CentralSQSQueue
+  SnsSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: sqs
+      Endpoint: !Sub "arn:aws:sqs:${PrimaryRegion}:${CentralAuditAccountID}:${CentralMainSQSQueueName}"
+      Region: !Ref "AWS::Region"
+      TopicArn: !Ref RegionalSNSTopic
+  LambdaExecutionRole:
+    Condition: CreatePrimaryRegionResources
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Ref LambdaExecutionRoleName
+      Description: "This role is used for collecting Inspector results and sent it to a centralized S3 bucket and and Elasticsearch domain.  Do not delete this role."
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+  LambdaExecutionRolePolicy:
+    Condition: CreatePrimaryRegionResources
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      ManagedPolicyName: 'Inspector-to-S3-ES-LambdaExec.iampolicy'
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: AddingSQSPermissions
+            Action:
+              - 'sqs:GetQueueUrl'
+              - 'sqs:ListDeadLetterSourceQueues'
+              - 'sqs:ReceiveMessage'
+              - 'sqs:DeleteMessage'
+              - 'sqs:GetQueueAttributes'
+            Effect: Allow
+            Resource: 
+              - !GetAtt CentralDeadLetterQueue.Arn
+              - !GetAtt CentralSQSQueue.Arn
+          - Sid: AddingS3BucketPermissions
+            Action:
+              - 's3:ListBucket'
+            Effect: Allow
+            Resource: !Sub 'arn:aws:s3:::${LoggingS3Bucket}'
+          - Sid: AddingS3ObjectPermissions
+            Action:
+              - 's3:PutObject'
+            Effect: Allow
+            Resource: !Sub 'arn:aws:s3:::${LoggingS3Bucket}/*'
+          - Sid: AddingEC2AndInspectorAndSQSPermissionsforAll
+            Action:
+              - 'ec2:DescribeInstances'
+              - 'ec2:DescribeVpcAttribute'
+              - 'ec2:DescribeVpcs'
+              - 'ec2:DescribeSubnets'
+              - 'inspector:List*'
+              - 'inspector:PreviewAgents'
+              - 'inspector:AddAttributesToFindings'
+              - 'inspector:Describe*'
+              - 'inspector:GetTelemetryMetadata'
+              - 'sqs:ListQueues'
+            Effect: Allow
+            Resource:
+              - '*'
+          - Sid: CrossAccountLambdaPermission
+            Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Resource: !Sub 'arn:aws:iam::*:role/${CrossAccountRoleName}'
+          - Sid: ElasticsearchPermissions
+            Action:
+              - 'es:ESHttpPost'
+              - 'es:ESHttpPut'
+            Effect: Allow
+            Resource: !Sub 'arn:aws:es:${PrimaryRegion}:${CentralAuditAccountID}:domain/${ElasticsearchDomainName}/*'
+      Roles:
+        - !Ref LambdaExecutionRole
+  Inspector2S3LambdaFunction:
+    Condition: CreatePrimaryRegionResources
+    Type: 'AWS::Lambda::Function'
+    Properties: 
+      Code:  
+        S3Bucket: !Ref LambdaSourceCodeS3Bucket
+        S3Key: !Ref LambdaCodeS3Key
+      Description: 'This function sends inspector findings with additional attributes to a S3 bucket and a Elasticsearch domain in Central Audit account for further analysis'
+      Environment:
+        Variables:
+          es_host: !Ref ElasticsearchEndpoint
+          es_index: !Ref ElasticsearchIndex
+          crossAccount_role: !Ref CrossAccountRoleName
+          s3_logging_bucket: !Ref LoggingS3Bucket
+      FunctionName: 'Inspector-to-S3ES-crossAcnt'
+      Handler: 'Inspector-to-S3ES-crossAcnt.lambda_handler'
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: 'python3.7'
+      Timeout: 25
+    DependsOn:
+      - CentralSQSQueue
+      - LambdaExecutionRole
+  LambdaTrigger:
+    Condition: CreatePrimaryRegionResources
+    Type: 'AWS::Lambda::EventSourceMapping'
+    Properties: 
+      BatchSize: 1 # This makes sure that each Inspector finding is processed as 1 event in Lambda and thus forward as 1 record
+      EventSourceArn: !GetAtt CentralSQSQueue.Arn
+      FunctionName: !GetAtt Inspector2S3LambdaFunction.Arn
+    DependsOn:
+      - LambdaExecutionRolePolicy

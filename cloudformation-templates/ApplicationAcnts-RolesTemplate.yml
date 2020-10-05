@@ -1,0 +1,117 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Step 2 - This template should be deployed only in the primary region of all the application accounts to create the IAM roles and polcies used for sending Inspector findings to central Audit Account.'
+Parameters:
+  CentralAuditAccountID:
+    Type: String
+    Description: Account ID of the Central Audit Account
+  PrimaryRegion:
+    Type: String
+    Description: Specify the region which can be used to create all the global resources in all the application accounts
+    Default: us-east-1
+  InspectorEventRoleName:
+    Type: String
+    Description: Name of the role (not ARN) that is assumed by CloudWatch Event to start a scheduled Inspector run
+    Default: Event-to-start-InspectorRun.iamrole
+  CrossAccountRoleName:
+    Type: String
+    Description: Name of the role (not ARN) that is assumed by Lambda Role of Audit account for fetching Inspector findings
+    Default: CrossAccountInspector.iamrole
+  InspectorToSNSLambdaRoleName:
+    Type: String
+    Description: Name of the execution role (not ARN) that is assumed by regional Lambda function to attach a SNS topic to an Inspector template
+    Default: Attach-SNS-to-Inspector-Lambda.iamrole
+  LambdaExecutionRoleName:
+    Type: String
+    Description: Name of the execution role (not ARN) that is assumed by Lambda function in Central Audit Account for sending Inspector findings
+    Default: Inspector-to-S3-ES-LambdaExec.iamrole
+Resources:
+  EventsInspectorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref InspectorEventRoleName
+      Description: "This role starts an Inspector Assessement run based on an event schedules interval.  Do not delete this role."
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - events.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+  EventRolePolicies:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: 'Inspector-Assessment-EventRule.iampolicy'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action: "inspector:StartAssessmentRun"
+          Resource: "*"
+      Roles:
+      - !Ref EventsInspectorRole
+  CrossAccountInspectorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref CrossAccountRoleName
+      AssumeRolePolicyDocument: !Sub "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [\n    {\n      \"Effect\": \"Allow\",\n      \"Principal\": {\n        \"AWS\": \"arn:aws:iam::${CentralAuditAccountID}:role/${LambdaExecutionRoleName}\"\n      },\n      \"Action\": \"sts:AssumeRole\",\n      \"Condition\": {}\n    }\n  ]\n}"
+      Description: "This role is assumed by Inspector-to-S3ES-crossAcnt Lambda function of central audit account for collection of Inspector findings from each application account.  Do not delete this role."
+  LambdaAssumeRolePolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      ManagedPolicyName: 'CrossAccount-LambdaAssume.iampolicy'
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: AddingEC2AndInspectorAndEventsPermissionsforAll
+            Action:
+              - 'ec2:DescribeInstances'
+              - 'ec2:DescribeVpcAttribute'
+              - 'ec2:DescribeVpcs'
+              - 'ec2:DescribeSubnets'
+              - 'inspector:List*'
+              - 'inspector:PreviewAgents'
+              - 'inspector:AddAttributesToFindings'
+              - 'inspector:Describe*'
+              - 'inspector:SetTagsForResource'
+              - 'inspector:GetTelemetryMetadata'
+              - 'events:DescribeRule'
+              - 'events:ListRuleNamesByTarget'
+            Effect: Allow
+            Resource:
+              - '*'
+      Roles:
+        - !Ref CrossAccountInspectorRole
+  Inspec2SNSLambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Ref InspectorToSNSLambdaRoleName
+      Description: "This role is assumed by a regional Lambda function to attach an Inspector template (of application accounts) to a SNS topic in central audit account.  Do not delete this role."
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+  Inspec2SNSLambdaExecutionPolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      ManagedPolicyName: 'Attach-SNS-to-Inspector-Lambda.iampolicy'
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: AddingInspectorPermissions
+            Action:
+              - 'inspector:List*'
+              - 'inspector:Describe*'
+              - 'inspector:SubscribeToEvent'
+            Effect: Allow
+            Resource:
+              - '*'
+      Roles:
+        - !Ref Inspec2SNSLambdaExecutionRole
