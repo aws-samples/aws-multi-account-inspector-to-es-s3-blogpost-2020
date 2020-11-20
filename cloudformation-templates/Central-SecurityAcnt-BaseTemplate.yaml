@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: 'Step 1 - This template should be deployed in all region of the central audit account to create all the necessary resources for collecting Inspector findings from all application accounts.'
 Parameters:
-  CentralAuditAccountID:
+  CentralSecurityAccountID:
     Type: String
     Description: Account ID of the Central Audit Account
   PrimaryRegion:
@@ -87,7 +87,7 @@ Resources:
           - Sid: TopicAccessPolicyforCentralAcntSQS
             Effect: Allow
             Principal:
-              AWS: !Sub 'arn:aws:iam::${CentralAuditAccountID}:root' # Central account where the SQS Queue is created
+              AWS: !Sub 'arn:aws:iam::${CentralSecurityAccountID}:root' # Central account where the SQS Queue is created
             Action:
               - 'SNS:Subscribe'
             Resource: !Ref RegionalSNSTopic
@@ -125,7 +125,7 @@ Resources:
             Resource: !GetAtt CentralSQSQueue.Arn
             Condition:
               ArnEquals:
-                'aws:SourceArn': !Sub 'arn:aws:sns:us-*:${CentralAuditAccountID}:${RegionalSNSTopicName}'
+                'aws:SourceArn': !Sub 'arn:aws:sns:us-*:${CentralSecurityAccountID}:${RegionalSNSTopicName}'
           - Sid: 'Permission for an SNS Topic to send messages to the Queue'
             Effect: Allow
             Principal: '*'
@@ -134,14 +134,14 @@ Resources:
             Resource: !GetAtt CentralSQSQueue.Arn
             Condition:
               ArnEquals:
-                'aws:SourceArn': !Sub 'arn:aws:sns:us-*:${CentralAuditAccountID}:${RegionalSNSTopicName}'
+                'aws:SourceArn': !Sub 'arn:aws:sns:us-*:${CentralSecurityAccountID}:${RegionalSNSTopicName}'
       Queues:
         - !Ref CentralSQSQueue
   SnsSubscription:
     Type: AWS::SNS::Subscription
     Properties:
       Protocol: sqs
-      Endpoint: !Sub "arn:aws:sqs:${PrimaryRegion}:${CentralAuditAccountID}:${CentralMainSQSQueueName}"
+      Endpoint: !Sub "arn:aws:sqs:${PrimaryRegion}:${CentralSecurityAccountID}:${CentralMainSQSQueueName}"
       Region: !Ref "AWS::Region"
       TopicArn: !Ref RegionalSNSTopic
   LambdaExecutionRole:
@@ -213,7 +213,7 @@ Resources:
               - 'es:ESHttpPost'
               - 'es:ESHttpPut'
             Effect: Allow
-            Resource: !Sub 'arn:aws:es:${PrimaryRegion}:${CentralAuditAccountID}:domain/${ElasticsearchDomainName}/*'
+            Resource: !Sub 'arn:aws:es:${PrimaryRegion}:${CentralSecurityAccountID}:domain/${ElasticsearchDomainName}/*'
       Roles:
         - !Ref LambdaExecutionRole
   Inspector2S3LambdaFunction:

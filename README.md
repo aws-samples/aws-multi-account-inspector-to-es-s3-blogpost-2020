@@ -5,7 +5,7 @@ In this repository you will find all the AWS CloudFormation templates that will 
 
 ### Overview of the CloudFormation Templates
 
-[Central-AuditAcnt-BaseTemplate.yaml](https://github.com/aws-samples/aws-multi-account-inspector-to-es-s3-blogpost-2020/blob/main/cloudformation-templates/Central-AuditAcnt-BaseTemplate.yaml) - This template creates the following resources in the central audit account:
+[Central-SecurityAcnt-BaseTemplate.yaml](https://github.com/aws-samples/aws-multi-account-inspector-to-es-s3-blogpost-2020/blob/main/cloudformation-templates/Central-SecurityAcnt-BaseTemplate.yaml) - This template creates the following resources in the central security account:
 1.  An SNS topic and topic policy in all those regions mapping to the regions of application accounts where Inspector scan will be conducted.
 2.  A SQS Queue with queue policy in the primary region where the regional SNS topics send the Inspector findings as messages.
 3.  A Dead Letter Queue in the primary region where failed messages will be stored if the messages are not delivered to the main SQS Queue.
@@ -18,15 +18,15 @@ In this repository you will find all the AWS CloudFormation templates that will 
 
 [ApplicationAcnts-RolesTemplate.yml](https://github.com/aws-samples/aws-multi-account-inspector-to-es-s3-blogpost-2020/blob/main/cloudformation-templates/ApplicationAcnts-RolesTemplate.yml) - This template creates the following global resources in the primary region of all application accounts:
 1.  An IAM role and policy to start an Inspector Assessement run in that account based on an scheduled interval.
-2.  An IAM role and policy that is used as a cross-account role to be assumed by the central audit account's lambda execution role for fetching details from the Inspector scans in the application accounts
-3.  An IAM role and policy used as the execution role for a regional lambda function created in all application accounts to attach the regional Inspector assessment template of application accounts to the same region SNS topic but in central audit account.
+2.  An IAM role and policy that is used as a cross-account role to be assumed by the central security account's lambda execution role for fetching details from the Inspector scans in the application accounts
+3.  An IAM role and policy used as the execution role for a regional lambda function created in all application accounts to attach the regional Inspector assessment template of application accounts to the same region SNS topic but in central security account.
 
 
 [InspectorRun-SetupTemplate.yml](https://github.com/aws-samples/aws-multi-account-inspector-to-es-s3-blogpost-2020/blob/main/cloudformation-templates/InspectorRun-SetupTemplate.yml) - This template creates the following resources in all those regions of all application accounts where Inspector assessment scan is performed:
 1.  A Lambda trigger that associates the regional lambda function with the CloudWatch event
 2.  An Inspector assessment target group per region that comprises all the EC2 instances of that region.
 3.  An Inspector assessment template that performs Inspector scan on the assessment target group of intances
-4.  A regional Lambda function that is used to attach the Amazon Inspector assessment template (created in application accounts) to the cross-account Amazon SNS topic (created in audit account), all within the same Region. This function is needed because Amazon Inspector templates can only be attached to SNS topics in the same account via the AWS Management Console or AWS Command Line Interface (AWS CLI).
+4.  A regional Lambda function that is used to attach the Amazon Inspector assessment template (created in application accounts) to the cross-account Amazon SNS topic (created in security account), all within the same Region. This function is needed because Amazon Inspector templates can only be attached to SNS topics in the same account via the AWS Management Console or AWS Command Line Interface (AWS CLI).
 5.  A CloudWatch event in every region that triggers the regional lambda function when the Amazon Inspector assessment template with a specific user-defined tag is created for the first time in that region
 6. A time based CloudWatch event to start the Inspector assessment template at a scheduled interval
 

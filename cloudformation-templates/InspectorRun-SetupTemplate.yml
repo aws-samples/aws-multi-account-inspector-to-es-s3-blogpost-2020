@@ -27,7 +27,7 @@ Mappings:
       RBA: arn:aws:inspector:us-west-2:758058086616:rulespackage/0-vg5GGHSD
       SBP: arn:aws:inspector:us-west-2:758058086616:rulespackage/0-JJOtZiqQ
 Parameters:
-  CentralAuditAccountID:
+  CentralSecurityAccountID:
     Type: String
     Description: Account ID of the Central Audit Account
   CWERuleNameToAttachSNSTopicToInspector:
@@ -106,7 +106,7 @@ Resources:
       Description: 'This regional function attaches an Inspector template (of each region of every application account) to the same region SNS topic (of central audit account)'
       Environment:
         Variables:
-          centralAcctId: !Ref CentralAuditAccountID
+          centralAcctId: !Ref CentralSecurityAccountID
           snsTopicName: !Ref RegionalSNSTopicName
           tagKey: !Ref InspectorTemplateTaggingKey
           tagValue: !Ref InspectorTemplateTaggingValue

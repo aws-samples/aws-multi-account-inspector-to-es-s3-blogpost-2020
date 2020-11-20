@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: 'Step 2 - This template should be deployed only in the primary region of all the application accounts to create the IAM roles and polcies used for sending Inspector findings to central Audit Account.'
 Parameters:
-  CentralAuditAccountID:
+  CentralSecurityAccountID:
     Type: String
     Description: Account ID of the Central Audit Account
   PrimaryRegion:
@@ -56,7 +56,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Ref CrossAccountRoleName
-      AssumeRolePolicyDocument: !Sub "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [\n    {\n      \"Effect\": \"Allow\",\n      \"Principal\": {\n        \"AWS\": \"arn:aws:iam::${CentralAuditAccountID}:role/${LambdaExecutionRoleName}\"\n      },\n      \"Action\": \"sts:AssumeRole\",\n      \"Condition\": {}\n    }\n  ]\n}"
+      AssumeRolePolicyDocument: !Sub "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [\n    {\n      \"Effect\": \"Allow\",\n      \"Principal\": {\n        \"AWS\": \"arn:aws:iam::${CentralSecurityAccountID}:role/${LambdaExecutionRoleName}\"\n      },\n      \"Action\": \"sts:AssumeRole\",\n      \"Condition\": {}\n    }\n  ]\n}"
       Description: "This role is assumed by Inspector-to-S3ES-crossAcnt Lambda function of central audit account for collection of Inspector findings from each application account.  Do not delete this role."
   LambdaAssumeRolePolicy:
     Type: 'AWS::IAM::ManagedPolicy'
